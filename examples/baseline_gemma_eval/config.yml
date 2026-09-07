@@ -1,0 +1,9 @@
+# Example Config for LLM Evaluation
+model: "google/gemma-2-9b-it"
+dataset: "BC5CDR"
+prompt_template: "templates/prompts/zero_shot.txt"
+
+# 固定パラメータ（変動しないもの）
+max_new_tokens: 128
+temperature: 0.0
+top_p: 0.9
