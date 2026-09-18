@@ -53,6 +53,9 @@ dependencies = [
     "sentencepiece",
     "vllm>=0.22.0",
     "matplotlib-venn>=1.1.2",
+
+    # --- VIPER benchmark harness (arxiv.org/abs/2608.26382) ---
+    "viper-bench @ git+https://github.com/mahmoodlab/viper.git",
 ]
 
 
@@ -63,6 +66,11 @@ build-backend = "hatchling.build"
 # lib をパッケージとして認識させる設定
 [tool.hatch.build.targets.wheel]
 packages = ["lib"]
+
+# viper-bench を git+https の直接参照で入れているため必要
+# （hatchlingはデフォルトでdirect referenceのビルドを拒否する）
+[tool.hatch.metadata]
+allow-direct-references = true
 
 # pytorch index url
 [[tool.uv.index]]

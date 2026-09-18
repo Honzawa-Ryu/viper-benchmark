@@ -35,6 +35,34 @@ if [ -z "${EXP_NAME:-}" ]; then
     _bootstrap_fail "MISSING_EXP_NAME" "EXP_NAME is not set. Source slurm_entry.sh from an experiment run_slurm.sh."
 fi
 
+# .env（HF_TOKEN等）をジョブ内で読む。--export=ALL は「投入したシェルの環境」を
+# 引き継ぐだけなので、.env をsourceし忘れたシェルから sbatch すると、gatedリポジトリ
+# のダウンロードがジョブ実行時に401で落ちる（投入時には何のエラーも出ない）。
+# ここで読めば、どのシェルから投入しても同じ環境で走る。
+# 既に環境にある値は上書きせず、未設定のものだけを .env から補う。
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    # `|| [ -n "${_env_line}" ]` は .env の最終行に改行が無い場合の取りこぼし対策。
+    while IFS= read -r _env_line || [ -n "${_env_line}" ]; do
+        _env_line="${_env_line#export }"
+        case "${_env_line}" in
+            ''|'#'*) continue ;;   # 空行・コメント
+            *=*) ;;                # KEY=VALUE のみ通す
+            *) continue ;;
+        esac
+        _env_key="${_env_line%%=*}"
+        _env_val="${_env_line#*=}"
+        # 値を囲むクォートがあれば剥がす
+        case "${_env_val}" in
+            \"*\") _env_val="${_env_val#\"}"; _env_val="${_env_val%\"}" ;;
+            \'*\') _env_val="${_env_val#\'}"; _env_val="${_env_val%\'}" ;;
+        esac
+        if [ -z "$(eval "printf '%s' \"\${${_env_key}:-}\"")" ]; then
+            export "${_env_key}=${_env_val}"
+        fi
+    done < "${PROJECT_ROOT}/.env"
+    unset _env_line _env_key _env_val
+fi
+
 # =====================================================
 # Scheduler abstraction
 # =====================================================
@@ -521,9 +549,14 @@ notify_start
 # Scratch
 # =====================================================
 
-export SCRATCH_DIR="/scratch/${USER}/${EXP_NAME}_${JOB_ID}"
-
-mkdir -p "${SCRATCH_DIR}"
+# 一部クラスタ（ノード）には /scratch 自体が存在しない/書き込み不可のため、
+# USE_LOCAL_SSD_INPUT/OUTPUT のどちらも使わない場合は作成もbindも行わない。
+if [ "${USE_LOCAL_SSD_INPUT:-0}" -eq 1 ] || [ "${USE_LOCAL_SSD_OUTPUT:-0}" -eq 1 ]; then
+    export SCRATCH_DIR="/scratch/${USER}/${EXP_NAME}_${JOB_ID}"
+    mkdir -p "${SCRATCH_DIR}"
+else
+    export SCRATCH_DIR=""
+fi
 
 # =====================================================
 # Input
@@ -584,11 +617,18 @@ _run_single() {
     set +e
 
     if command -v apptainer &>/dev/null && [ -n "${SIF_PATH:-}" ] && [ -f "${SIF_PATH}" ]; then
+        local -a apptainer_scratch_opts=()
+        if [ -n "${SCRATCH_DIR:-}" ]; then
+            apptainer_scratch_opts=(
+                --bind "/scratch/${USER}"
+                --bind "${SCRATCH_DIR}"
+                --env "UV_CACHE_DIR=${SCRATCH_DIR}/.uv_cache"
+            )
+        fi
+
         apptainer exec \
             --nv \
-            --bind "/scratch/${USER}" \
-            --bind "${SCRATCH_DIR}" \
-            --env UV_CACHE_DIR="${SCRATCH_DIR}/.uv_cache" \
+            "${apptainer_scratch_opts[@]}" \
             "${SIF_PATH}" \
             bash -c "
                 set -euo pipefail
@@ -601,7 +641,7 @@ _run_single() {
                 ${cmd}
             " 1>&2 &
     else
-        echo "⚠️ Apptainer not found or SIF_PATH not set. Running command on host system."
+        echo "⚠️ Apptainer not found or SIF_PATH not set. Running command on host system." >&2
         bash -c "
             set -euo pipefail
             if [ -f ${PROJECT_ROOT}/.venv/bin/activate ]; then
