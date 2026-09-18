@@ -1,0 +1,28 @@
+# ============================================================
+# Experiment Configuration
+# 0002_eval_pathology_fms_organ_probe
+#
+# VIPERデータセットの画像 + `organ`列(9クラス)を使い、VLMではない病理特化
+# feature extractor(models.yml参照)の組織分類プローブ評価(linear probe /
+# kNN、StratifiedKFold)を行う。
+# ============================================================
+
+# --- Fixed hyperparameters (do NOT sweep these; --model-key is the swept dim in run_slurm.sh) ---
+seed: 42
+
+# StratifiedKFoldの分割数。organのクラスごとの画像数が最少で約19枚
+# (2026-09-18確認)なので、5分割より細かくすると1fold中のサンプル数が
+# 過小になり評価が不安定になる。
+n_splits: 5
+
+# kNN分類のk。
+knn_k: 5
+
+# 埋め込み抽出時のバッチサイズ。419枚程度なので大きくする必要はない。
+batch_size: 16
+
+# UNI/CONCH/Virchow2/H-optimus-0の重みは、既に同一クラスタの別プロジェクトの
+# HFキャッシュに(gatedアクセス承認済みで)ダウンロード済みのものを再利用する。
+# ここが無い/移動された場合はこのパスを直すか、別途 huggingface-cli download
+# 等で取得し直すこと。
+hf_cache_dir: "/workspace/andre01/honzawa/.cache/huggingface"

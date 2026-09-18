@@ -56,6 +56,11 @@ dependencies = [
 
     # --- VIPER benchmark harness (arxiv.org/abs/2608.26382) ---
     "viper-bench @ git+https://github.com/mahmoodlab/viper.git",
+
+    # --- Pathology foundation model feature extractors (organ classification probe) ---
+    "timm",
+    "einops",
+    "conch @ git+https://github.com/Mahmoodlab/CONCH.git",
 ]
 
 

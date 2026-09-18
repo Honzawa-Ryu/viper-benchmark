@@ -4,6 +4,45 @@
 review-expで結果を集約する際、debug-experimentで調査する際は、対象実験のIDに
 該当する節があればまず読むこと。
 
+## 0002_20260918_eval_pathology_fms_organ_probe
+
+0001で使っていたVIPERデータセット(`data/datasets--MahmoodLab--viper/`、419
+ユニーク画像・`organ`列9クラス)を、VLMではない病理特化feature extractor
+4種(UNI, CONCH, Virchow2, H-optimus-0)の組織分類プローブ評価に転用する実験。
+0001のVLM評価コード(vLLM serve + `viper-eval`)には手を入れず、完全に別の
+`experiment.py`(素のPyTorch推論、サーバなし)を新規に書いた。
+
+### 設計メモ
+
+- `organ`列のクラス別画像数は最少で19枚(salivary_gland)。`config.yml`の
+  `n_splits: 5`のStratifiedKFoldはこの前提で選んでいる(2026-09-18、
+  実データで確認済み)。
+- 4モデルの重みは、このリポジトリの外(`/workspace/andre01/honzawa/`の
+  別プロジェクト)のHFキャッシュ(`config.yml`の`hf_cache_dir`)を再利用する
+  設計にした。gatedリポジトリ(UNI/CONCH)へのアクセスが既にそのアカウントで
+  承認済みだったため、再ダウンロードを避けるため。**このキャッシュが
+  削除/移動されると本実験は動かなくなる**ので、その場合は`hf_cache_dir`を
+  直すか、`huggingface-cli download`等で本リポジトリ内に取り直すこと。
+- Virchow2/H-optimus-0は`timm.create_model("hf-hub:...")`でロードするため、
+  `HF_HOME`/`HF_HUB_OFFLINE=1`を`hf_cache_dir`から設定してオフライン解決
+  させている。UNI/CONCHは`models.yml`の`weights_glob`でキャッシュ内の
+  `pytorch_model.bin`を直接globして`state_dict`を読む(hf-hub経由にしていない)。
+- CONCHは専用pipパッケージ(`conch @ git+https://github.com/Mahmoodlab/CONCH.git`)
+  が必要で`pyproject.toml`に追加済みだが、**実際に`uv sync`でこのパッケージ名
+  (`conch`)が正しく解決できるかは未検証**(2026-09-18時点、このセッションは
+  GPUもgrace01側の`.venv`実体にもアクセスできず`uv sync`を実行できなかった
+  ため)。初回実行時にまずここで詰まる可能性がある。
+- `experiment.py`のデータ読み込み(`resolve_viper_parquet`/
+  `load_organ_dataset`)とCV評価(`run_cv`)のロジックは、実データ(419枚・
+  9クラス)とダミー埋め込みでの単体テストで動作確認済み(2026-09-18)。
+  一方、4モデルのロード・埋め込み抽出・SLURM投入そのものはこのクラウド
+  セッションでは検証できていない。特にVirchow2のCLS+mean-patch結合による
+  出力次元(2560)、CONCHの実際の出力次元(`models.yml`は512と仮置きだが未確認)
+  は、実行時に`results.json`の`embedding_dim`で確認し、必要なら`models.yml`
+  のコメントを実測値に直すこと。
+- 4モデル分の`results.json`を横断比較する`compare_results.py`を追加した
+  (SLURMジョブには含めず、4つの`--model-key`が完走した後に手動実行する想定)。
+
 ## 0001_20260907_eval_public_models_viper
 
 VIPER (arxiv.org/abs/2608.26382, 獣医病理VLMベンチマーク) の再現。ただし自前学習は

@@ -1,0 +1,47 @@
+# ============================================================
+# 病理特化 feature extractor レジストリ
+#
+# VLMではない、単純な画像特徴抽出器(pathology foundation model)の組織分類
+# プローブ評価に使うモデル一覧。`python experiment.py --model-key <key>` の
+# <key> -> ロード方法のマッピング。
+#
+# 4種とも /workspace/andre01/honzawa/.cache/huggingface (config.yml の
+# hf_cache_dir) に既にHF hub形式でキャッシュ済み・gatedアクセス承認済み
+# (2026-09-18確認)。このリポジトリの外のキャッシュを再利用しているので、
+# そのキャッシュが削除/移動された場合はこのレジストリも合わせて直すこと。
+# ============================================================
+
+models:
+
+  uni:
+    loader: uni
+    hf_repo: "MahmoodLab/uni"
+    weights_glob: "models--MahmoodLab--uni/snapshots/*/pytorch_model.bin"
+    embedding_dim: 1024
+    notes: "timm vit_large_patch16_224 (DINOv2レシピ)。state_dictを直接ロード。"
+
+  conch:
+    loader: conch
+    hf_repo: "MahmoodLab/conch"
+    weights_glob: "models--MahmoodLab--conch/snapshots/*/pytorch_model.bin"
+    embedding_dim: 512 # 実装確認時に実際の出力形状で要修正
+    notes: >
+      専用pipパッケージ`conch`(git+https://github.com/Mahmoodlab/CONCH.git)が必要。
+      conch_ViT-B-16をencode_image(proj_contrast=False, normalize=False)で使用。
+
+  virchow2:
+    loader: virchow2
+    hf_hub_id: "paige-ai/Virchow2"
+    embedding_dim: 2560 # CLS(1280) + mean-patch(1280) を結合
+    notes: >
+      timm hf-hub経由(mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)。
+      hf_cache_dirをHF_HOME/HF_HUB_OFFLINE=1に設定してオフライン解決する。
+
+  h-optimus-0:
+    loader: h_optimus_0
+    hf_hub_id: "bioptimus/H-optimus-0"
+    embedding_dim: 1536
+    notes: >
+      timm hf-hub経由(init_values=1e-5, dynamic_img_size=False)。
+      正規化統計値はImageNetではなく専用の値
+      (mean=(0.707223,0.578729,0.703617), std=(0.211883,0.230117,0.177517))。
