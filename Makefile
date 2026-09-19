@@ -1,5 +1,6 @@
 .PHONY: \
 	setup \
+	build_sif \
 	uv_sync \
 	create_exp \
 	mark_fail \
@@ -20,8 +21,17 @@ setup:
 	@bash tools/first_setup.sh
 
 # =========================================================
-# 1. Sync Python environment
+# 1. Build the Apptainer image / sync Python environment
 # =========================================================
+
+build_sif:
+	@if [ -z "$(p)" ]; then \
+		echo "❌ Error: partition is required."; \
+		echo "Usage: make build_sif p=<partition>"; \
+		exit 1; \
+	fi
+
+	sbatch --partition=$(p) tools/build_sif.sh
 
 uv_sync:
 	@if [ -z "$(p)" ]; then \
