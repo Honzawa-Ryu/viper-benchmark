@@ -17,31 +17,50 @@ review-expで結果を集約する際、debug-experimentで調査する際は、
 - `organ`列のクラス別画像数は最少で19枚(salivary_gland)。`config.yml`の
   `n_splits: 5`のStratifiedKFoldはこの前提で選んでいる(2026-09-18、
   実データで確認済み)。
-- 4モデルの重みは、このリポジトリの外(`/workspace/andre01/honzawa/`の
-  別プロジェクト)のHFキャッシュ(`config.yml`の`hf_cache_dir`)を再利用する
-  設計にした。gatedリポジトリ(UNI/CONCH)へのアクセスが既にそのアカウントで
-  承認済みだったため、再ダウンロードを避けるため。**このキャッシュが
-  削除/移動されると本実験は動かなくなる**ので、その場合は`hf_cache_dir`を
-  直すか、`huggingface-cli download`等で本リポジトリ内に取り直すこと。
-- Virchow2/H-optimus-0は`timm.create_model("hf-hub:...")`でロードするため、
-  `HF_HOME`/`HF_HUB_OFFLINE=1`を`hf_cache_dir`から設定してオフライン解決
-  させている。UNI/CONCHは`models.yml`の`weights_glob`でキャッシュ内の
-  `pytorch_model.bin`を直接globして`state_dict`を読む(hf-hub経由にしていない)。
-- CONCHは専用pipパッケージ(`conch @ git+https://github.com/Mahmoodlab/CONCH.git`)
-  が必要で`pyproject.toml`に追加済みだが、**実際に`uv sync`でこのパッケージ名
-  (`conch`)が正しく解決できるかは未検証**(2026-09-18時点、このセッションは
-  GPUもgrace01側の`.venv`実体にもアクセスできず`uv sync`を実行できなかった
-  ため)。初回実行時にまずここで詰まる可能性がある。
-- `experiment.py`のデータ読み込み(`resolve_viper_parquet`/
-  `load_organ_dataset`)とCV評価(`run_cv`)のロジックは、実データ(419枚・
-  9クラス)とダミー埋め込みでの単体テストで動作確認済み(2026-09-18)。
-  一方、4モデルのロード・埋め込み抽出・SLURM投入そのものはこのクラウド
-  セッションでは検証できていない。特にVirchow2のCLS+mean-patch結合による
-  出力次元(2560)、CONCHの実際の出力次元(`models.yml`は512と仮置きだが未確認)
-  は、実行時に`results.json`の`embedding_dim`で確認し、必要なら`models.yml`
-  のコメントを実測値に直すこと。
-- 4モデル分の`results.json`を横断比較する`compare_results.py`を追加した
-  (SLURMジョブには含めず、4つの`--model-key`が完走した後に手動実行する想定)。
+- 4モデルの重みは`data/models--<org>--<name>/...`にVIPERデータセットと
+  同じHF hubキャッシュ形式で置いてある(2026-09-19、`/workspace/andre01/`
+  の別プロジェクトの既存キャッシュ(gatedアクセス承認済み)からコピー)。
+  **`hf_cache_dir`という独立の設定ではなく、`dataset_dir`(=`data/`)を
+  そのまま`HF_HUB_CACHE`として使う**設計にした(`HF_HUB_OFFLINE=1`と
+  併用)。当初は`/workspace/andre01/...`を指す`hf_cache_dir`をconfig.ymlに
+  持たせて外部キャッシュを直接参照する設計だったが、**grace01は
+  `/workspace/andre01`をマウントしておらずジョブから一切参照できない
+  ことが実機投入で判明した**(`/workspace/grace01`が他ノードから見えない
+  のと対称的に、grace01からも他ノードのworkspaceは見えない。ノード間で
+  共有されているのは`/workspace/filesrv02`のような本物のNFSサーバ上の
+  領域だけで、`/workspace/<ノード名>`はそのノード自身のローカル領域)。
+  そのため重みを`data/`配下にコピーする方式に変更した。
+- Virchow2/H-optimus-0は`timm.create_model("hf-hub:...")`でロードする。
+  UNI/CONCHは`models.yml`の`weights_glob`でキャッシュ内の`pytorch_model.bin`
+  を直接globして`state_dict`を読む(hf-hub経由にしていない)。
+- CONCHの専用pipパッケージ(`conch @ git+https://github.com/Mahmoodlab/CONCH.git`)
+  は`uv sync`で問題なく解決できた(2026-09-19、`conch==0.1.0`としてインストール、
+  依存の`ftfy`/`h5py`も自動解決)。
+- **`SIF_PATH`のハマりどころ**: `scripts/slurm_entry.sh`の`.env`パーサは
+  「環境に既に値がある変数は上書きしない」設計だが、このクラスタの
+  シェル環境には(由来不明・おそらく別プロジェクト作業時の残留)
+  `SIF_PATH`が既に別プロジェクト(`01-toxpatho/toxpatho-ssl-comparison`)
+  の存在しないファイルを指した状態で乗っていることがある。この状態だと
+  `.env`に正しい`SIF_PATH`を書いてもジョブには反映されず、
+  `run_slurm.sh`はapptainerなしのホスト実行にサイレントに
+  フォールバックしてしまう(実害は無いが、apptainer経由での実行を
+  意図している場合は要注意)。確実に効かせるには、sbatch投入する
+  シェルで明示的に`export SIF_PATH=<正しいパス>`してから投入すること。
+- viper-benchmark自体には`.sif`/`.def`が無かったため、`00-utils/
+  data-io-test/env/env.def`(グループ共通の「uvのみ入った最低限の環境」
+  テンプレート、CUDA 12.8.1-cudnn-devel-ubuntu24.04ベース)をそのまま
+  `env/env.def`としてコピーして`make build_sif p=<partition>`でビルドした
+  (2026-09-19、`env/env.sif`、5.7GB)。**grace01はaarch64(NVIDIA Grace)
+  ノードで、ビルドログにも`libboost-fiber-dev:arm64`等arm64パッケージが
+  並ぶ**。`pyproject.toml`の`torch==2.11.0+cu130`はこの構成で問題なく
+  解決できている(0001が既に動いていた実績通り)。
+- `experiment.py`の4モデル全て(uni/conch/virchow2/h-optimus-0)の
+  ロード・埋め込み抽出・組織分類CVを実機(grace01、job 11050/11051)で
+  検証済み(2026-09-19)。埋め込み次元は設計通り: uni=1024, conch=512
+  (`models.yml`の仮置き値と一致), virchow2=2560(CLS+mean-patch結合),
+  h-optimus-0=1536。結果(StratifiedKFold 5分割、linear probe accuracy):
+  conch 0.945 > virchow2 0.919 > uni 0.909 > h-optimus-0 0.907
+  (詳細は`outputs/0002_.../comparison.csv`、`compare_results.py`で再生成可能)。
 
 ## 0001_20260907_eval_public_models_viper
 

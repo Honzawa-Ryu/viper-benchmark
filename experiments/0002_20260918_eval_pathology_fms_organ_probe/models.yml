@@ -5,10 +5,10 @@
 # プローブ評価に使うモデル一覧。`python experiment.py --model-key <key>` の
 # <key> -> ロード方法のマッピング。
 #
-# 4種とも /workspace/andre01/honzawa/.cache/huggingface (config.yml の
-# hf_cache_dir) に既にHF hub形式でキャッシュ済み・gatedアクセス承認済み
-# (2026-09-18確認)。このリポジトリの外のキャッシュを再利用しているので、
-# そのキャッシュが削除/移動された場合はこのレジストリも合わせて直すこと。
+# 4種とも data/ 配下にHF hub形式(models--<org>--<name>/...)でキャッシュ済み
+# (2026-09-19、別プロジェクトの既存キャッシュ(gatedアクセス承認済み)から
+# コピー。grace01が/workspace/andre01をマウントしておらずジョブから
+# 直接参照できないことが実機検証で判明したため)。
 # ============================================================
 
 models:
@@ -35,7 +35,7 @@ models:
     embedding_dim: 2560 # CLS(1280) + mean-patch(1280) を結合
     notes: >
       timm hf-hub経由(mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)。
-      hf_cache_dirをHF_HOME/HF_HUB_OFFLINE=1に設定してオフライン解決する。
+      HF_HUB_CACHE(=dataset_dir)/HF_HUB_OFFLINE=1でオフライン解決する。
 
   h-optimus-0:
     loader: h_optimus_0

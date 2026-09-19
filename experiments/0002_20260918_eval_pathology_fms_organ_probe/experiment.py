@@ -100,9 +100,9 @@ def load_organ_dataset(parquet_path: Path) -> tuple[list[Image.Image], np.ndarra
 
 
 def _resolve_weights_path(hf_cache_dir: str, weights_glob: str) -> Path:
-    matches = sorted(Path(hf_cache_dir, "hub").glob(weights_glob))
+    matches = sorted(Path(hf_cache_dir).glob(weights_glob))
     if not matches:
-        raise FileNotFoundError(f"No weights found under {hf_cache_dir}/hub/{weights_glob}")
+        raise FileNotFoundError(f"No weights found under {hf_cache_dir}/{weights_glob}")
     return matches[0]
 
 
@@ -301,10 +301,14 @@ def main() -> None:
     if loader_key not in LOADERS:
         raise KeyError(f"No loader implemented for '{loader_key}' (models.yml: {args.model_key})")
 
-    hf_cache_dir = config.get("hf_cache_dir")
-    if hf_cache_dir:
-        os.environ["HF_HOME"] = hf_cache_dir
-        os.environ["HF_HUB_OFFLINE"] = "1"
+    # Model weights are cached under dataset_dir in the same HF-hub-cache
+    # layout (models--<org>--<name>/...) as the VIPER dataset itself, so one
+    # directory covers both `hf-hub:` timm loading and the manual
+    # weights_glob lookups below. HF_HUB_CACHE points directly at that
+    # directory (no intermediate "hub/" level), matching how it was populated.
+    hf_cache_dir = str(dataset_dir)
+    os.environ["HF_HUB_CACHE"] = hf_cache_dir
+    os.environ["HF_HUB_OFFLINE"] = "1"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"device: {device}")

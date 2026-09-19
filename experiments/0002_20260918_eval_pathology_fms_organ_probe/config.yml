@@ -21,8 +21,10 @@ knn_k: 5
 # 埋め込み抽出時のバッチサイズ。419枚程度なので大きくする必要はない。
 batch_size: 16
 
-# UNI/CONCH/Virchow2/H-optimus-0の重みは、既に同一クラスタの別プロジェクトの
-# HFキャッシュに(gatedアクセス承認済みで)ダウンロード済みのものを再利用する。
-# ここが無い/移動された場合はこのパスを直すか、別途 huggingface-cli download
-# 等で取得し直すこと。
-hf_cache_dir: "/workspace/andre01/honzawa/.cache/huggingface"
+# UNI/CONCH/Virchow2/H-optimus-0の重みは data/ 配下に
+# models--<org>--<name>/... というHF hubキャッシュと同じレイアウトで
+# 配置済み(2026-09-19、別プロジェクトの既存キャッシュからコピー)。
+# grace01は/workspace/andre01(重みの元の置き場)をマウントしておらず、
+# ジョブから直接参照できないことが実機検証で判明したため、VIPERデータセット
+# と同じdata/配下に置く方式に変更した。hf_cache_dirという設定キーは廃止し、
+# dataset_dirをそのままHF_HUB_CACHEとして使う(experiment.py参照)。
