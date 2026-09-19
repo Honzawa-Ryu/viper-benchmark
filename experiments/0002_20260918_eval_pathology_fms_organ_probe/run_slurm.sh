@@ -95,7 +95,7 @@ GRID_ARGS=(
     "--model-key"
 )
 GRID_VALUES=(
-    "uni conch virchow2 h-optimus-0"
+    "uni conch virchow2 h-optimus-0 resnet50-imagenet"
 )
 
 # =====================================================

@@ -201,11 +201,40 @@ def _load_h_optimus_0(spec: dict, device: str, hf_cache_dir: str):
     return model, transform, embed_fn
 
 
+def _load_resnet50_imagenet(spec: dict, device: str, hf_cache_dir: str):
+    import timm
+    from safetensors.torch import load_file
+
+    weights_path = _resolve_weights_path(hf_cache_dir, spec["weights_glob"])
+    model = timm.create_model("resnet50", pretrained=False, num_classes=0)
+    state_dict = load_file(weights_path)
+    # strict=False: the checkpoint includes the ImageNet classifier head
+    # (fc.weight/fc.bias), which has no matching parameter once the model
+    # is built with num_classes=0.
+    model.load_state_dict(state_dict, strict=False)
+    model.eval().to(device)
+
+    transform = transforms.Compose(
+        [
+            transforms.Resize(224),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ]
+    )
+
+    def embed_fn(m, x):
+        return m(x)
+
+    return model, transform, embed_fn
+
+
 LOADERS: dict[str, Callable] = {
     "uni": _load_uni,
     "conch": _load_conch,
     "virchow2": _load_virchow2,
     "h_optimus_0": _load_h_optimus_0,
+    "resnet50_imagenet": _load_resnet50_imagenet,
 }
 
 

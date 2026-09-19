@@ -8,9 +8,44 @@ review-expで結果を集約する際、debug-experimentで調査する際は、
 
 0001で使っていたVIPERデータセット(`data/datasets--MahmoodLab--viper/`、419
 ユニーク画像・`organ`列9クラス)を、VLMではない病理特化feature extractor
-4種(UNI, CONCH, Virchow2, H-optimus-0)の組織分類プローブ評価に転用する実験。
-0001のVLM評価コード(vLLM serve + `viper-eval`)には手を入れず、完全に別の
-`experiment.py`(素のPyTorch推論、サーバなし)を新規に書いた。
+5種(UNI, CONCH, Virchow2, H-optimus-0, および比較対象のImageNet教師あり
+学習ResNet50)の組織分類プローブ評価に転用する実験。0001のVLM評価コード
+(vLLM serve + `viper-eval`)には手を入れず、完全に別の`experiment.py`
+(素のPyTorch推論、サーバなし)を新規に書いた。
+
+### 結果サマリ(2026-09-19、5モデル完走・`compare_results.py`で再生成可能)
+
+StratifiedKFold 5分割、linear probe accuracy:
+conch 0.945 > virchow2 0.919 > uni 0.909 ≈ h-optimus-0 0.907
+>> resnet50-imagenet(ImageNetベースライン) 0.788
+
+**病理特化の事前学習は明確に効いている**(4モデルとも0.90超、ImageNet
+ベースラインとの差は12〜16pt)。4モデル間の差は相対的に小さい。
+
+`analyze_errors.py`でモデル横断のOOF予測誤りを集計したところ(419枚中
+311枚=74%は5モデル全て正解、9枚は5モデル全て不正解):
+- **臓器によって誤り率が大きく偏る**: heart(41%)、gastrointestinal_tract/
+  lung(20%)、salivary_gland(19%)、male_reproductive_system(18%)が
+  誤りやすい一方、liver(1.6%)、thyroid(2.5%)、urinary_bladder(5.8%)、
+  kidney(8.8%)はほぼ全モデルが正解する。**病理特化かImageNetかを問わず
+  同じ臓器で同じように間違えている**(=モデル固有の癖ではなく、画像/
+  タスク側の難しさ)。
+- 5モデル中4つ以上が外した21枚は、`category`が`identify_anatomy`/
+  `localize_in_image`(=解剖部位の特定・局在同定)に偏り、
+  `magnification`は20x(高倍率、視野が狭く臓器全体の文脈が見えない)が
+  大半を占める。低倍率(2.5x)ほど誤り率が低い傾向とも整合的。
+  **解釈**: 肝臓/腎臓/甲状腺は高倍率の一視野でも認識できる特徴的な
+  組織構造(肝索・糸球体・濾胞)を持つが、心臓/消化管/唾液腺/雄性生殖器系
+  は視野を切り取ると他組織と紛らわしくなりやすい、という仮説と整合する。
+- `source`列は`TG-GATEs`が誤り0%・`MMO`に誤りが集中しているが、
+  `TG-GATEs`は(Open TG-GATEsが元々ラット肝臓の毒性データベースのため)
+  ほぼ`liver`のみに対応しており、**臓器の効果と交絡している**点に注意
+  (source起因の効果とは言い切れない)。
+- `category`も同様に、画像の重複排除で「その画像に紐づく最初の1問」の
+  値を使っているため、必ずしもその画像自体の難易度を代表するとは限らない
+  (交絡の可能性がある点は留意)。
+- 詳細は`outputs/0002_.../error_analysis.csv`(画像ごとのモデル別正誤+
+  メタデータ)。
 
 ### 設計メモ
 
@@ -31,8 +66,13 @@ review-expで結果を集約する際、debug-experimentで調査する際は、
   領域だけで、`/workspace/<ノード名>`はそのノード自身のローカル領域)。
   そのため重みを`data/`配下にコピーする方式に変更した。
 - Virchow2/H-optimus-0は`timm.create_model("hf-hub:...")`でロードする。
-  UNI/CONCHは`models.yml`の`weights_glob`でキャッシュ内の`pytorch_model.bin`
-  を直接globして`state_dict`を読む(hf-hub経由にしていない)。
+  UNI/CONCH/resnet50-imagenetは`models.yml`の`weights_glob`でキャッシュ内の
+  重みファイルを直接globして`state_dict`を読む(hf-hub経由にしていない)。
+  resnet50-imagenet(timmの"resnet50.tv_in1k"タグ)はローカルキャッシュに
+  config.jsonが無く"hf-hub:"文字列でのロードが効かなかったため、UNIと同じ
+  直接ロード方式にした(`timm.create_model("resnet50", pretrained=False)`
+  を素で構築し、`safetensors.torch.load_file`でstate_dictを流し込む、
+  `strict=False`で分類ヘッド分のキー不一致を許容)。
 - CONCHの専用pipパッケージ(`conch @ git+https://github.com/Mahmoodlab/CONCH.git`)
   は`uv sync`で問題なく解決できた(2026-09-19、`conch==0.1.0`としてインストール、
   依存の`ftfy`/`h5py`も自動解決)。
